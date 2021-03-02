@@ -1,5 +1,8 @@
+/************************** Inclusão das Bibliotecas **************************/
+
 #include <WiFi.h>
 #include <PubSubClient.h>
+#include <ArduinoJson.h>
 
 /**************************** DEBUG *******************************/
 
@@ -11,11 +14,18 @@
 #define LED_BUILTIN 2
 
 #define WIFI_SSID     "Zuqueto"
-#define WIFI_PASSWORD "....."
+#define WIFI_PASSWORD "PASSWORD"
 
-#define DEVICE_TOKEN  "....."
+String device_token   = "TOKEN";
+String device_hashapp = "DEVICE_HASH_APP";
+String device_eui     = "DEVICE_EUI";
 
 const char* mqtt_server = "mqtt.proiot.network";
+const int mqtt_port     = 1883;
+
+unsigned long previousMillis = 0;
+
+int interval = 5000; // 60 segundos
 
 /************************* Instanciação dos objetos  **************************/
 
@@ -54,7 +64,7 @@ void reconnect() {
     String clientId = "proiot-dev-";
     clientId += String(random(0xffff), HEX);
 
-    if (client.connect(clientId.c_str(), DEVICE_TOKEN, "")) {
+    if (client.connect(clientId.c_str(), device_token.c_str(), "")) {
       Serial.println("connected");
     } else {
       Serial.print("failed, rc=");
@@ -74,7 +84,7 @@ void setup() {
 
   initWiFi();
 
-  client.setServer(mqtt_server, 1883);
+  client.setServer(mqtt_server, mqtt_port);
 }
 
 void loop() {
@@ -84,12 +94,54 @@ void loop() {
   }
   client.loop();
 
+  unsigned long currentMillis = millis();
+  if (currentMillis - previousMillis > interval) {
+    digitalWrite(LED_BUILTIN, 1);
+    sendData();
+    digitalWrite(LED_BUILTIN, 0);
 
-  Serial.print("Publish message: ");
-  Serial.println("ok");
+    previousMillis = currentMillis;
+  }
+}
 
-  digitalWrite(LED_BUILTIN, 1);
-  client.publish("device/5ef20c1f47f0e40019a54876", "ok");
-  digitalWrite(LED_BUILTIN, 0);
-  delay(2000);
+float getTemperature() {
+  float value = random(20.0, 35.5);
+
+  return value;
+}
+
+float getBattery() {
+  float value = random(0, 100);
+
+  return value;
+}
+
+String getPayload() {
+  DynamicJsonDocument doc(128);
+
+  JsonArray data = doc.createNestedArray("data");
+
+  JsonObject temmperature = data.createNestedObject();
+  JsonObject battery = data.createNestedObject();
+
+  temmperature["name"] = "temp";
+  temmperature["value"] = getTemperature();
+
+  battery["name"] = "bat";
+  battery["value"] = getBattery();
+
+  String payload;
+
+  serializeJson(doc, payload);
+
+  return payload;
+}
+
+void sendData() {
+  String topic = "proiot/" + device_hashapp + "/" + device_eui + "/tx";
+  String payload = getPayload();
+
+  client.publish(topic.c_str(), payload.c_str());
+
+  DEBUG_PRINTLN("[SENSOR] ok");
 }

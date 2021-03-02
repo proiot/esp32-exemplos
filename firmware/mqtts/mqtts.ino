@@ -1,7 +1,8 @@
 /************************** Inclusão das Bibliotecas **************************/
 
 #include <WiFi.h>
-#include <HTTPClient.h>
+#include <WiFiClientSecure.h>
+#include <PubSubClient.h>
 #include <ArduinoJson.h>
 
 /**************************** DEBUG *******************************/
@@ -16,32 +17,26 @@
 #define WIFI_SSID     "Zuqueto"
 #define WIFI_PASSWORD "PASSWORD"
 
-#define DEVICE_EUI    "DEVICE_EUI"
-#define DEVICE_TOKEN   "TOKEN"
+String device_token   = "TOKEN";
+String device_hashapp = "DEVICE_HASH_APP";
+String device_eui     = "DEVICE_EUI";
 
-String API_URL = "http://things.conn.proiot.network";
+const char* mqtt_server = "mqtt.proiot.network";
+const int mqtt_port     = 8883;
 
 unsigned long previousMillis = 0;
 
 int interval = 5000; // 60 segundos
 
-/************************* Declaração dos Prototypes **************************/
-
-void initSerial();
-void initWiFi();
-void sendData();
-void handleError(int httpCode , String message);
-
 /************************* Instanciação dos objetos  **************************/
 
-WiFiClient client;
-HTTPClient http;
+WiFiClientSecure espClient;
+PubSubClient client(espClient);
 
-void initSerial() {
-  Serial.begin(115200);
-}
+/********************************** Sketch ************************************/
 
 void initWiFi() {
+
   delay(10);
   DEBUG_PRINTLN("");
   DEBUG_PRINT("[WIFI] Conectando-se em " + String(WIFI_SSID));
@@ -63,25 +58,40 @@ void initWiFi() {
   DEBUG_PRINTLN("");
 }
 
-void handleError(int httpCode , String message ) {
-  DEBUG_PRINT("Code: " + String(httpCode));
-  DEBUG_PRINT(" | code msg: " + http.errorToString(httpCode));
-  DEBUG_PRINTLN(" | Message: " + message);
+void reconnect() {
+  while (!client.connected()) {
+    Serial.print("Attempting MQTT connection...");
+
+    if (client.connect(device_eui.c_str(), device_token.c_str(), "")) {
+      Serial.println("connected");
+    } else {
+      Serial.print("failed, rc=");
+      Serial.print(client.state());
+      Serial.println(" try again in 5 seconds");
+
+      delay(5000);
+    }
+  }
 }
-
-
-
-/********************************** Sketch ************************************/
 
 void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, 0);
 
-  initSerial();
+  Serial.begin(115200);
+
   initWiFi();
+
+  client.setServer(mqtt_server, mqtt_port);
 }
 
 void loop() {
+
+  if (!client.connected()) {
+    reconnect();
+  }
+  client.loop();
+
   unsigned long currentMillis = millis();
   if (currentMillis - previousMillis > interval) {
     digitalWrite(LED_BUILTIN, 1);
@@ -126,26 +136,10 @@ String getPayload() {
 }
 
 void sendData() {
-  String uri = API_URL + "/" + DEVICE_EUI;
-
-  http.begin(uri);
-
-  http.addHeader("Content-Type", "application/json");
-  http.addHeader("Authorization", DEVICE_TOKEN);
-
+  String topic = "proiot/" + device_hashapp + "/" + device_eui + "/tx";
   String payload = getPayload();
 
-  int httpCode = http.POST(payload);
-
-  if (httpCode != HTTP_CODE_NO_CONTENT) {
-    String response =  http.getString();
-
-    handleError(httpCode, response);
-
-    http.end();
-
-    return;
-  }
+  client.publish(topic.c_str(), payload.c_str());
 
   DEBUG_PRINTLN("[SENSOR] ok");
 }

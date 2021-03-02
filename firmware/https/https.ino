@@ -1,6 +1,5 @@
 /************************** Inclusão das Bibliotecas **************************/
 
-#include <Arduino.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
@@ -13,39 +12,31 @@
 
 /**************************** Variaveis globais *******************************/
 
-// https://things.proiot.network/stream/device/dev-01/variable/01/25.5
-
 #define LED_BUILTIN 2
 
 #define WIFI_SSID     "Zuqueto"
-#define WIFI_PASSWORD "....."
+#define WIFI_PASSWORD "PASSWORD"
 
-#define DEVICE_NAME     "dev-01"
-#define DEVICE_TOKEN    "....."
-#define VARIABLE_ALIAS  "01"
+#define DEVICE_EUI    "DEVICE_EUI"
+#define DEVICE_TOKEN   "TOKEN"
 
-String API_URL = "http://things.proiot.network/stream";
+String API_URL = "https://things.conn.proiot.network";
+
+unsigned long previousMillis = 0;
+
+int interval = 5000; // 60 segundos
 
 /************************* Declaração dos Prototypes **************************/
 
 void initSerial();
 void initWiFi();
-bool sendData();
+void sendData();
 void handleError(int httpCode , String message);
 
 /************************* Instanciação dos objetos  **************************/
 
 WiFiClientSecure client;
 HTTPClient http;
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-uint8_t temprature_sens_read();
-#ifdef __cplusplus
-}
-#endif
-uint8_t temprature_sens_read();
 
 void initSerial() {
   Serial.begin(115200);
@@ -79,35 +70,6 @@ void handleError(int httpCode , String message ) {
   DEBUG_PRINTLN(" | Message: " + message);
 }
 
-String getTemperature() {
-  float temperature = ((temprature_sens_read() - 32) / 1.8);
-
-  return String(temperature);
-}
-
-bool sendData() {
-  String uri = API_URL + "/device/" + DEVICE_NAME + "/variable/" + VARIABLE_ALIAS + "/" + getTemperature();
-
-  http.begin(uri);
-
-  http.addHeader("Authorization", DEVICE_TOKEN);
-
-  int httpCode = http.POST("");
-
-  String response =  http.getString();
-  http.end();
-
-
-  if (httpCode != HTTP_CODE_OK) {
-    handleError(httpCode, response);
-    return false;
-  }
-
-  DEBUG_PRINTLN("[SENSOR] " + response);
-
-  return true;
-}
-
 /********************************** Sketch ************************************/
 
 void setup() {
@@ -119,10 +81,71 @@ void setup() {
 }
 
 void loop() {
-  digitalWrite(LED_BUILTIN, 1);
-  sendData();
-  digitalWrite(LED_BUILTIN, 0);
+  unsigned long currentMillis = millis();
+  if (currentMillis - previousMillis > interval) {
+    digitalWrite(LED_BUILTIN, 1);
+    sendData();
+    digitalWrite(LED_BUILTIN, 0);
 
-  delay(5000);
+    previousMillis = currentMillis;
+  }
+}
+
+float getTemperature() {
+  float value = random(20.0, 35.5);
+
+  return value;
+}
+
+float getBattery() {
+  float value = random(0, 100);
+
+  return value;
+}
+
+String getPayload() {
+  DynamicJsonDocument doc(128);
+
+  JsonArray data = doc.createNestedArray("data");
+
+  JsonObject temmperature = data.createNestedObject();
+  JsonObject battery = data.createNestedObject();
+
+  temmperature["name"] = "temp";
+  temmperature["value"] = getTemperature();
+
+  battery["name"] = "bat";
+  battery["value"] = getBattery();
+
+  String payload;
+
+  serializeJson(doc, payload);
+
+  return payload;
+}
+
+void sendData() {
+  String uri = API_URL + "/" + DEVICE_EUI;
+
+  http.begin(uri);
+
+  http.addHeader("Content-Type", "application/json");
+  http.addHeader("Authorization", DEVICE_TOKEN);
+
+  String payload = getPayload();
+
+  int httpCode = http.POST(payload);
+
+  if (httpCode != HTTP_CODE_NO_CONTENT) {
+    String response =  http.getString();
+
+    handleError(httpCode, response);
+
+    http.end();
+
+    return;
+  }
+
+  DEBUG_PRINTLN("[SENSOR] ok");
 }
 

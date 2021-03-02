@@ -25,6 +25,7 @@ Biblioteca utilizada: [HTTPClient(nativa)](https://github.com/espressif/arduino-
 ### MQTT
 
 * Ex 1 - Conexão insegura: [link](./firmware/mqtt/mqtt.ino)
+* Ex 2 - Conexão segura: [link](./firmware/mqtts/mqtts.ino)
 
 ## Referências
 
